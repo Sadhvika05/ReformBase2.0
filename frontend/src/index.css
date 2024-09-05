@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  height: 100%;
+  width: 100%;
+  background-color: rgb(236, 235, 235);
+  scale: 1.17;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+}
