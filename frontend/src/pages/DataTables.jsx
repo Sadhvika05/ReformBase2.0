@@ -16,6 +16,7 @@ const DataTables = () => {
   const [showRenameGroupModal, setShowRenameGroupModal] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);  // State for Import Modal
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchGroups();
@@ -68,9 +69,23 @@ const DataTables = () => {
   //   setShowImportModal(true);
   // };
 
+  const filteredgroups = groups.filter(group =>
+    group.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center">
-      <div className="max-w-7xl w-full bg-white p-6 shadow-md rounded-lg flex flex-col">
+    <div style={{width: '60%', height: '65vh',backgroundColor: 'white',
+      padding: '2rem',
+      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+      borderRadius: '0.5rem',
+      display: 'flex',
+      flexDirection: 'column',
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      overflow: 'hidden'}}>
+      <div>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-4">
             <svg
@@ -120,10 +135,12 @@ const DataTables = () => {
           <input
             className="ml-auto w-1/3 p-2 border border-gray-300 rounded-md text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent"
             placeholder="Search"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
         <div className="space-y-4 flex-1 overflow-y-auto">
-          {groups.map((group) => (
+          {filteredgroups.map((group) => (
             <div key={group._id} className="border rounded-lg p-4 bg-gray-50">
               <div className="flex justify-between items-center">
                 <span className="text-xl font-semibold">{group.name}</span>
