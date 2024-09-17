@@ -129,7 +129,7 @@ const DataTables = () => {
                 <span className="text-xl font-semibold">{group.name}</span>
                 <div className="flex space-x-2 text-gray-500">
                   {(user.role === 'admin' || user.role === 'moderator') && (
-                    <button onClick={() => navigate('/datatables')}>
+                    <button onClick={() => navigate(`/healthprofile/${encodeURIComponent(group.name)}/tables`)}>
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="24"
