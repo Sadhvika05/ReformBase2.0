@@ -8,7 +8,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
-import TableModal from './pages/TableModal';
+import TableModal from './pages/TableUpload';
 
 const App = () => {
   return (
@@ -19,7 +19,7 @@ const App = () => {
         <Route path="/" element={<ProtectedRoute element={<Home />} />} />
         <Route path="/health-care" element={<ProtectedRoute element={<HealthCare />} />} />
         <Route path="/health-care/data-tables" element={<ProtectedRoute element={<DataTables />} />} />
-        <Route path="/datatables" element={<TableModal/>}/>
+        <Route path="/healthprofile/:groupname/tables" element={<TableModal/>}/>
         <Route path="/data/:id" element={<ProtectedRoute element={<DataDetail />} />} />
         {/* Add other routes here */}
       </Routes>
