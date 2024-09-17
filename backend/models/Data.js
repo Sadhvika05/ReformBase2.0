@@ -1,13 +1,23 @@
 const mongoose = require('mongoose');
 
-const tableSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  content: { type: mongoose.Schema.Types.Mixed, required: true, default: {} }
+const TableSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+  },
+  data: {
+    type: Array,
+    required: true,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
 const dataSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  tables: [tableSchema],
+  tables: [TableSchema],
   createdAt: {
     type: Date,
     default: Date.now
