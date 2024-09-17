@@ -1,8 +1,9 @@
 import React, { useState, useEffect,useRef } from 'react';
 import * as XLSX from 'xlsx';
-import axios from 'axios';
+import axios from '../api/axios';
 import './TableUpload.css'; // Import the CSS file
 import { useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 
 const TableUpload = () => {
   const navigate = useNavigate();
@@ -12,19 +13,21 @@ const TableUpload = () => {
   const [currentTableId, setCurrentTableId] = useState(null); // ID of the table being edited or viewed
   const [isEditing, setIsEditing] = useState(false); // State to toggle edit mode
   const [isViewing, setIsViewing] = useState(false); // State to toggle viewing mode
+  const [searchTerm, setSearchTerm] = useState(''); // New state for search term
   const fileInputRef = useRef(null);
+  const { groupname } = useParams();
 
   useEffect(() => {
     const fetchTables = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/tables');
+        const response = await axios.get(`/${encodeURIComponent(groupname)}/tables`);
         setTables(response.data);
       } catch (error) {
         console.error('Error fetching tables:', error);
       }
     };
     fetchTables();
-  }, []);
+  }, [groupname]);
 
   const handleImportClick = () => {
     
@@ -65,14 +68,14 @@ const TableUpload = () => {
     try {
       if (currentTableId) {
         // If editing, update the table
-        const response = await axios.put('http://localhost:5000/api/tables/${currentTableId}', {
+        const response = await axios.put(`/${encodeURIComponent(groupname)}/tables/${currentTableId}`, {
           name: fileName,
           data: tableData,
         });
         setTables(tables.map((table) => (table._id === currentTableId ? response.data : table)));
       } else {
         // If not editing, create a new table
-        const response = await axios.post('http://localhost:5000/api/tables', {
+        const response = await axios.post(`/${groupname}/tables`, {
           name: fileName,
           data: tableData,
         });
@@ -104,7 +107,7 @@ const TableUpload = () => {
 
   const deleteTable = async (id) => {
     try {
-      await axios.delete(`http://localhost:5000/api/tables/${id}`);
+      await axios.delete(`/${encodeURIComponent(groupname)}/tables/${id}`);
       setTables(tables.filter((table) => table._id !== id));
       if (currentTableId === id) {
         resetForm(); // Clear view if the deleted table was being viewed
@@ -127,6 +130,10 @@ const TableUpload = () => {
     resetForm();
     setIsViewing(false);
   };
+
+  const filteredTables = tables.filter(table =>
+    table.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     
@@ -163,11 +170,11 @@ const TableUpload = () => {
               <path d="M12 19l-7-7 7-7"></path>
               <path d="M19 12H5"></path>
             </svg>
-            <h1 className="text-xl font-semibold text-gray-800" style={{position:'relative',left:'30px',top:'-28px'}}>Data Tables</h1>
+            <h1 className="text-xl font-semibold text-gray-800"></h1>
           </div>
           <div className="flex items-center space-x-4">
             <svg
-            style={{position:'relative',right:'-680px',top:'-55px'}}
+            style={{position:'relative',right:'-910px',top:'-35px'}}
               xmlns="http://www.w3.org/2000/svg"
               width="24"
               height="24"
@@ -185,18 +192,27 @@ const TableUpload = () => {
             <button
               className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2"
               onClick={() => navigate('/profile')}
-              style={{position:'relative',right:'-700px',top:'-55px'}}
+              style={{position:'relative',right:'-930px',top:'-35px'}}
             >
               My Profile
             </button>
           </div>
         </div>
         <div >
-          <h2 className="text-3xl font-bold ml-4 text-gray-800" style={{textAlign:'center',position:'relative',top:'-50px'}}>Health Care</h2>
+          <h2 className="text-3xl font-bold ml-4 text-gray-800" style={{textAlign:'center',position:'relative',top:'-70px'}}>{groupname}</h2>
+        </div>
+        <div className="flex items-center mb-6" style={{position:'relative', top:'-20px'}}>
+          <input
+            className="ml-auto w-1/4 p-2 border border-gray-300 rounded-md text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent"
+            placeholder="Search"
+            style={{position:'relative',left:'-800px'}}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
     <div className="table-upload-container">
       <div className="control-panel">
-      <button onClick={() => handleImportClick()} style={{position:'relative',right:'-400px',top:'-55px'}}>
+      <button onClick={() => handleImportClick()} style={{position:'relative',right:'-520px',top:'-105px'}}>
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       width="15"
@@ -220,7 +236,7 @@ const TableUpload = () => {
                   />
         <button className="button" onClick={enterEditMode} disabled={isEditing || !isViewing}>
         <svg
-                      style={{position:'relative',right:'-350px',top:'-55px'}}
+                      style={{position:'relative',right:'-410px',top:'-105px'}}
                       xmlns="http://www.w3.org/2000/svg"
                       width="24"
                       height="24"
@@ -241,7 +257,7 @@ const TableUpload = () => {
         <button className="button" onClick={saveTable} disabled={!isViewing}>
           
           <svg 
-          style={{position:'relative',right:'-390px',top:'-55px'}}
+          style={{position:'relative',right:'-435px',top:'-105px'}}
           width="24" 
           height="26" 
           viewBox="0 0 23 19" 
@@ -273,7 +289,7 @@ const TableUpload = () => {
 )}
 {tables.length > 0 && (
   <div style={{
-    marginTop: '20px',
+    marginTop: '90px',
     width: '100%',
   }}>
     <h2 style={{
@@ -292,7 +308,8 @@ const TableUpload = () => {
       borderRadius: '5px',
       backgroundColor: '#f9f9f9',
     }}>
-      {tables.map((table) => (
+
+      {filteredTables.map((table) => (
         <div key={table._id} style={{
           display: 'flex',
           justifyContent: 'space-between',
