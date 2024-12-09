@@ -4,6 +4,7 @@ import axios from '../api/axios';
 import './TableUpload.css'; // Import the CSS file
 import { useNavigate } from 'react-router-dom';
 import { useParams } from 'react-router-dom';
+import ProfileModal from '../components/ProfileModal';
 
 const TableUpload = () => {
   const navigate = useNavigate();
@@ -16,11 +17,53 @@ const TableUpload = () => {
   const [searchTerm, setSearchTerm] = useState(''); // New state for search term
   const fileInputRef = useRef(null);
   const { groupname } = useParams();
+  const [rows, setRows] = useState(""); // Default number of rows
+  const [columns, setColumns] = useState(""); // Default number of columns
+  const [showTable, setShowTable] = useState(false);
+  const [tablesData, setTablesData] = useState([]); // State to hold table data
+  const [tableName, setTableName] = useState(""); // Name for the table
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [viewingTable, setViewingTable] = useState(null);
+  const [lastRowDataByTable, setLastRowDataByTable] = useState({});
+  const [isPopupVisible, setIsPopupVisible] = useState(false);
+  const [popupTableName, setPopupTableName] = useState(null);
+  const { name } = useParams();
+  const togglePanel = () => {
+    setIsPanelOpen(!isPanelOpen);
+  };
+
+  // Function to open the modal
+  const openModal = () => setIsModalOpen(true);
+
+  // Function to close the modal
+  const closeModal = () => setIsModalOpen(false);
+
+  // Modal component, defined inside the same file
+  const Modal = ({ isOpen, onClose, children }) => {
+    if (!isOpen) return null; // If modal is not open, don't render anything
+
+    return (
+      <div className="modal-overlay">
+        <div className="modal-content">
+          {/* Close button to revert back */}
+          <button className="modal-close"onClick={onClose}>Close</button>
+          {children}
+        </div>
+      </div>
+    );
+  };
+
+  const handleViewTable = (table) => {
+    setViewingTable(table);
+    viewTable(table); // Original view function logic
+  };
 
   useEffect(() => {
     const fetchTables = async () => {
       try {
-        const response = await axios.get(`/${encodeURIComponent(groupname)}/tables`);
+        const response = await axios.get(`/${encodeURIComponent(name)}/${encodeURIComponent(groupname)}/tables`);
         setTables(response.data);
       } catch (error) {
         console.error('Error fetching tables:', error);
@@ -29,60 +72,200 @@ const TableUpload = () => {
     fetchTables();
   }, [groupname]);
 
+  useEffect(() => {
+    console.log("Current Table Data:", tableData); // Log current table data
+}, [tableData]);
+
+  
+
   const handleImportClick = () => {
     
     fileInputRef.current.click();
   };
 
+  const exportToCSV = (data, filename) => {
+    // Convert the data array to a CSV string
+    const csvContent = data.map(row => row.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.setAttribute("download", `${filename}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Function to handle row input change
+  const handleRowChange = (e) => {
+    setRows(parseInt(e.target.value)); // Convert to integer
+  };
+
+  // Function to handle column input change
+  const handleColumnChange = (e) => {
+    setColumns(parseInt(e.target.value)); // Convert to integer
+  };
+
+  const handleShowPopup = (tableName) => {
+    setPopupTableName(tableName);
+    setIsPopupVisible(true);
+  };
+
+  // Function to close the pop-up
+  const handleClosePopup = () => {
+    setIsPopupVisible(false);
+    setPopupTableName(null);
+  };
+
+  const handleAddRow = () => {
+    if (isEditing) {
+      const newRow = Array(tableData[0]?.length).fill(''); // Create a new row with empty cells
+      setTableData([...tableData, newRow]); // Update the table data with the new row
+    }
+  };
+
+  const handleAddColumn = () => {
+    if (isEditing) {
+      const updatedData = tableData.map(row => [...row, '']); // Add an empty cell to each row
+      setTableData(updatedData); // Update the table data with the new column
+    }
+  };
+
+  const handleInputChange = (rowIndex, colIndex, value) => {
+    const newData = [...tablesData];
+    newData[rowIndex][colIndex] = value;
+    setTablesData(newData);
+  };
+
+  const createTable = () => {
+    if(!isViewing && !isEditing){
+    const initialData = Array.from({ length: rows }, () => Array(columns).fill(''));
+    setTablesData(initialData);
+    setShowTable(true);
+    }
+  };
+
+  const handleCloseTable = () => {
+    setShowTable(false);
+    setRows(0);
+    setColumns(0);
+  };
+
+  const saveTables = async () => {
+    try {
+    const tableContent = { name: tableName, data: tablesData };
+
+    await axios.post(`/${encodeURIComponent(name)}/${encodeURIComponent(groupname)}/tables/save-table`, tableContent);
+
+      alert('Table saved successfully!');
+    } catch (error) {
+      console.error('Error saving table:', error);
+      alert('Failed to save the table');
+    }
+    const response = await axios.post(`${name}/${groupname}/tables`, {
+      name: tableName,
+      data: tablesData,
+    });
+    setTables([...tables, response.data]);
+    setIsEditing(false);
+  };
+
+
   const handleFileChange = (event) => {
     const file = event.target.files[0];
-
+  
     if (!file) {
       console.error('No file selected');
       return;
     }
-
+  
     setFileName(file.name);
-
+  
     const reader = new FileReader();
     reader.onload = (e) => {
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      let jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+  
+      // Remove empty rows
+      jsonData = jsonData.filter(row => row.some(cell => cell !== null && cell !== ""));
+  
+      // Remove empty columns
+      const nonEmptyColumnIndices = [];
+      jsonData.forEach(row => {
+        row.forEach((cell, idx) => {
+          if (cell !== null && cell !== "") {
+            if (!nonEmptyColumnIndices.includes(idx)) {
+              nonEmptyColumnIndices.push(idx);
+            }
+          }
+        });
+      });
+  
+      // Keep only non-empty columns
+      jsonData = jsonData.map(row => nonEmptyColumnIndices.map(idx => row[idx]));
+  
+      if (jsonData.length === 0) {
+        console.warn('No valid data found in the file.');
+        return;
+      }
+  
+      // Check the last row for specific condition (only data in the first column)
+      const lastRowIndex = jsonData.length - 1;
+      const lastRow = jsonData[lastRowIndex];
+  
+      let lastRowData = null; // To store removed last row data
+  
+      if (lastRow && lastRow[0] && lastRow.slice(1).every(cell => !cell)) {
+        // Store data from the first column in lastRowData and remove the last row
+        lastRowData = lastRow[0];
+        jsonData.pop(); // Remove the last row from the table data
+      }
+  
+      // Update the table-specific last row data
+      setLastRowDataByTable(prev => ({
+        ...prev,
+        [file.name]: lastRowData  // Use file name or another unique identifier for the table
+      }));
+  
+      // Set table data and update states
       setTableData(jsonData);
       setIsViewing(true); // Automatically enter viewing mode after file import
       setIsEditing(false); // Ensure editing is off initially
       setCurrentTableId(null); // Clear current table ID on new file import
     };
-
+  
     reader.onerror = (error) => {
       console.error('Error reading file:', error);
     };
-
+  
     reader.readAsArrayBuffer(file);
   };
+  
 
+  
   const saveTable = async () => {
+    
     try {
       if (currentTableId) {
         // If editing, update the table
-        const response = await axios.put(`/${encodeURIComponent(groupname)}/tables/${currentTableId}`, {
+        const response = await axios.put(`/${encodeURIComponent(name)}/${encodeURIComponent(groupname)}/tables/${currentTableId}`, {
           name: fileName,
           data: tableData,
         });
         setTables(tables.map((table) => (table._id === currentTableId ? response.data : table)));
       } else {
         // If not editing, create a new table
-        const response = await axios.post(`/${groupname}/tables`, {
+        const response = await axios.post(`${name}/${groupname}/tables`, {
           name: fileName,
           data: tableData,
         });
         setTables([...tables, response.data]);
       }
       setIsEditing(false); // Exit editing mode
-      setIsViewing(true); // Stay in viewing mode after saving
+      setIsViewing(false); // Stay in viewing mode after saving
       resetForm(); // Reset form after saving
     } catch (error) {
       console.error('Error saving table:', error);
@@ -107,7 +290,7 @@ const TableUpload = () => {
 
   const deleteTable = async (id) => {
     try {
-      await axios.delete(`/${encodeURIComponent(groupname)}/tables/${id}`);
+      await axios.delete(`/${encodeURIComponent(name)}/${encodeURIComponent(groupname)}/tables/${id}`);
       setTables(tables.filter((table) => table._id !== id));
       if (currentTableId === id) {
         resetForm(); // Clear view if the deleted table was being viewed
@@ -124,6 +307,7 @@ const TableUpload = () => {
     setCurrentTableId(table._id);
     setIsViewing(true); // Enter viewing mode
     setIsEditing(false); // Ensure not in editing mode
+    
   };
 
   const closeTableView = () => {
@@ -131,31 +315,34 @@ const TableUpload = () => {
     setIsViewing(false);
   };
 
+  const handleSearchChange = (e) => {
+    setSearchQuery(e.target.value);
+  };
+  
   const filteredTables = tables.filter(table =>
     table.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const filteredTableList = filteredTables.filter(table => table.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
     
       <div style={{
-        width: '60%',
-        height: '65vh',
+        width: '100%',
+        height: '100vh',
         backgroundColor: 'white',
-        padding: '2rem',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-        borderRadius: '0.5rem',
+        padding: '17rem',
         display: 'flex',
         flexDirection: 'column',
-        position: 'absolute',
+        position: 'fixed',
         top: '50%',
         left: '50%',
         transform: 'translate(-50%, -50%)',
-        overflow: 'hidden'}}>
+        overflow:'hidden'}}>
         <div className>
           <div className="input" >
             <svg
-              
-              onClick={() => navigate('/health-care/data-tables')}
+              style={{position:'fixed',marginRight:'-5px',marginTop:'-100px'}}
+              onClick={() => navigate(`/${encodeURIComponent(name)}/data-tables`)}
               xmlns="http://www.w3.org/2000/svg"
               width="24"
               height="24"
@@ -174,7 +361,8 @@ const TableUpload = () => {
           </div>
           <div className="flex items-center space-x-4">
             <svg
-            style={{position:'relative',right:'-910px',top:'-35px'}}
+            style={{position:'fixed',marginLeft:'1200px',marginTop:'-190px'}}
+            onClick={() => navigate('/')}
               xmlns="http://www.w3.org/2000/svg"
               width="24"
               height="24"
@@ -191,42 +379,44 @@ const TableUpload = () => {
             </svg>
             <button
               className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2"
-              onClick={() => navigate('/profile')}
-              style={{position:'relative',right:'-930px',top:'-35px'}}
+              onClick={() => setIsModalOpen(true)}
+              style={{position:'fixed',marginLeft:'1250px',marginTop:'-190px'}}
             >
               My Profile
             </button>
+            <ProfileModal isOpen={isModalOpen} onRequestClose={() => setIsModalOpen(false)} />
           </div>
         </div>
+        
         <div >
-          <h2 className="text-3xl font-bold ml-4 text-gray-800" style={{textAlign:'center',position:'relative',top:'-70px'}}>{groupname}</h2>
+          <h2 className="text-3xl font-bold ml-4 text-gray-800" style={{position:'fixed',marginTop:'-110px',marginLeft:'570px'}}>{groupname}</h2>
         </div>
-        <div className="flex items-center mb-6" style={{position:'relative', top:'-20px'}}>
+        <div style={{backgroundColor: '#fff',marginLeft:'1100px',marginTop:'-10px',position:'fixed'}}>
+          <label>Rows: </label>
           <input
-            className="ml-auto w-1/4 p-2 border border-gray-300 rounded-md text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:border-transparent"
-            placeholder="Search"
-            style={{position:'relative',left:'-800px'}}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            type="number"
+            value={rows}
+            onChange={handleRowChange}
+            min="1"
+            style={{ padding: '1px',fontSize: '14px',width: '45px', border: '1px solid black',textAlign:'center', marginLeft:'2px'}}
           />
         </div>
+        <div style={{backgroundColor: '#fff',position:'fixed',marginTop:'-10px',marginLeft:'1200px'}}>
+          <label>Columns: </label>
+          <input
+            type="number"
+            value={columns}
+            onChange={handleColumnChange}
+            min="1"
+            style={{ padding: '1px',fontSize: '14px',width: '45px', border: '1px solid black',marginLeft:'2px',textAlign:'center'}}
+          />
+        </div>      
     <div className="table-upload-container">
       <div className="control-panel">
-      <button onClick={() => handleImportClick()} style={{position:'relative',right:'-520px',top:'-105px'}}>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="15"
-                      height="15"
-                      viewBox="0 0 40 40"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-5 w-5 hover:text-gray-700"
-                    >
-                      <path d="M28.7 17c-.34-.33-.8-.51-1.28-.51s-.94.18-1.28.51L21.33 21.68V4.16c0-.46-.28-.89-.7-1.23-.42-.34-.87-.53-1.35-.53-.48 0-.93.19-1.35.53-.42.34-.7.77-.7 1.23v17.52l-5.8-4.68c-.34-.33-.8-.51-1.28-.51-.48 0-.94.18-1.28.51-.34.33-.52.78-.52 1.27.01.49.17.95.49 1.33l7.92 7.67 1.29 1.29 1.29-1.29 7.91-7.67c.33-.33.51-.78.51-1.27s-.17-.94-.51-1.27zM6.09 23.16c0-.23-.05-.46-.14-.67-.09-.21-.23-.41-.39-.58-.16-.17-.35-.31-.56-.41-.21-.1-.45-.16-.7-.16-.25 0-.49.05-.7.16-.21.1-.4.24-.56.41-.16.17-.3.37-.39.58-.09.21-.14.44-.14.67v7.72c0 1.26.45 2.45 1.28 3.35.84.89 2.08 1.38 3.33 1.38h24.4c1.26 0 2.49-.49 3.33-1.38.84-.89 1.28-2.09 1.28-3.35v-7.72c0-.23-.05-.46-.14-.67-.09-.21-.23-.41-.39-.58-.16-.17-.35-.31-.56-.41-.21-.1-.45-.16-.7-.16-.25 0-.49.05-.7.16-.21.1-.4.24-.56.41-.16.17-.3.37-.39.58-.09.21-.14.44-.14.67v7.72c0 .24-.07.48-.2.68-.13.2-.31.35-.55.45-.23.1-.48.16-.75.16H7.31c-.27 0-.52-.06-.75-.16-.23-.1-.42-.25-.55-.45-.13-.2-.2-.44-.2-.68v-7.72z" fill="black"/>
-                    </svg>
+      <button onClick={() => handleImportClick()} style={{position:'fixed',marginLeft:'1090px',marginTop:'-45px', cursor: 'pointer'}}>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M6.29289 9.70711L11.2929 14.7071L12 15.4142L12.7071 14.7071L17.7071 9.70711L16.2929 8.29289L13 11.5858V4H18C19.1046 4 20 4.89543 20 6V18C20 19.1046 19.1046 20 18 20H6C4.89543 20 4 19.1046 4 18V6C4 4.89543 4.89543 4 6 4H11L11 11.5858L7.70711 8.29289L6.29289 9.70711Z" fill="#222222"/>
+</svg>
                   </button>
                   <input
                     type="file"
@@ -234,9 +424,189 @@ const TableUpload = () => {
                     style={{ display: 'none' }}
                     onChange={handleFileChange}
                   />
-        <button className="button" onClick={enterEditMode} disabled={isEditing || !isViewing}>
-        <svg
-                      style={{position:'relative',right:'-410px',top:'-105px'}}
+        <button className="button" onClick={enterEditMode} disabled={isEditing || !isViewing} style={{position:'fixed',marginLeft:'1127px',marginTop:'-47px', cursor: 'pointer'}}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M17.204 10.796L19 9C19.5453 8.45475 19.8179 8.18213 19.9636 7.88803C20.2409 7.32848 20.2409 6.67152 19.9636 6.11197C19.8179 5.81788 19.5453 5.54525 19 5C18.4548 4.45475 18.1821 4.18213 17.888 4.03639C17.3285 3.75911 16.6715 3.75911 16.112 4.03639C15.8179 4.18213 15.5453 4.45475 15 5L13.1814 6.81866C14.1452 8.46926 15.5314 9.84482 17.204 10.796ZM11.7269 8.27311L4.8564 15.1436C4.43134 15.5687 4.21881 15.7812 4.07907 16.0423C3.93934 16.3034 3.88039 16.5981 3.7625 17.1876L3.1471 20.2646C3.08058 20.5972 3.04732 20.7635 3.14193 20.8581C3.23654 20.9527 3.40284 20.9194 3.73545 20.8529L6.81243 20.2375C7.40189 20.1196 7.69661 20.0607 7.95771 19.9209C8.21881 19.7812 8.43134 19.5687 8.8564 19.1436L15.7458 12.2542C14.1241 11.2386 12.7524 9.87627 11.7269 8.27311Z" fill="#222222"/>
+</svg>
+        </button>
+        <button className="button" onClick={saveTable} disabled={!isViewing} style={{position:'fixed',marginLeft:'1240px',marginTop:'-47px', cursor: 'pointer'}}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M17.8 8H3V16.8C3 17.9201 3 18.4802 3.21799 18.908C3.40973 19.2843 3.71569 19.5903 4.09202 19.782C4.51984 20 5.0799 20 6.2 20H17.8C18.9201 20 19.4802 20 19.908 19.782C20.2843 19.5903 20.5903 19.2843 20.782 18.908C21 18.4802 21 17.9201 21 16.8V11.2C21 10.0799 21 9.51984 20.782 9.09202C20.5903 8.71569 20.2843 8.40973 19.908 8.21799C19.4802 8 18.9201 8 17.8 8ZM14.7929 10.2929L10.5 14.5858L8.70711 12.7929L7.29289 14.2071L9.79289 16.7071L10.5 17.4142L11.2071 16.7071L16.2071 11.7071L14.7929 10.2929Z" fill="#222222"/>
+<path d="M3 8C3 7.06812 3 6.60218 3.15224 6.23463C3.35523 5.74458 3.74458 5.35523 4.23463 5.15224C4.60218 5 5.06812 5 6 5H8.34315C9.16065 5 9.5694 5 9.93694 5.15224C10.3045 5.30448 10.5935 5.59351 11.1716 6.17157L13 8H3Z" fill="#222222"/>
+</svg>
+
+</button>
+
+<button className="button" onClick={createTable} 
+style={{position:'fixed',border:'none',backgroundColor:'#fff',marginLeft:'1200px',marginTop:'-47px'}}>
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M7 3C4.79086 3 3 4.79086 3 7V17C3 19.2091 4.79086 21 7 21H17C19.2091 21 21 19.2091 21 17V7C21 4.79086 19.2091 3 17 3H7ZM11 7V11L7 11V13H11V17H13V13H17V11H13V7H11Z" fill="#222222"/>
+</svg>
+
+        </button>
+        <button className="button" onClick={closeTableView} style={{position:'fixed',marginLeft:'1160px',marginTop:'-47px',border:'none',backgroundColor:'#fff'}}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12ZM6.58579 16L7.29289 15.2929L10.5858 12L7.29289 8.70711L6.58579 8L8 6.58579L8.70711 7.29289L12 10.5858L15.2929 7.29289L16 6.58579L17.4142 8L16.7071 8.70711L13.4142 12L16.7071 15.2929L17.4142 16L16 17.4142L15.2929 16.7071L12 13.4142L8.70711 16.7071L8 17.4142L6.58579 16Z" fill="#222222"/>
+</svg>
+        </button>
+        <button onClick={() => exportToCSV(tableData, tableName)} style={{position:'fixed',marginLeft:'1280px',marginTop:'-47px',border:'none',backgroundColor:'#fff'}}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M7 10L12 5M12 5L17 10M12 5L12 11.5" stroke="#222222" stroke-width="2"/>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M11 13V16.5C11 17.0523 11.4477 17.5 12 17.5C12.5523 17.5 13 17.0523 13 16.5V13H18C19.1046 13 20 13.8954 20 15V19C20 20.1046 19.1046 21 18 21H6C4.89543 21 4 20.1046 4 19V15C4 13.8954 4.89543 13 6 13H11Z" fill="#222222"/>
+          </svg>
+          </button>
+        </div>
+    </div>
+    
+    {showTable && (
+  <div style={{marginTop: '50px',position:'fixed',marginLeft:'170px'}}>
+    <input
+  type="text"
+  value={tableName}
+  onChange={(e) => setTableName(e.target.value)} // Capture the name input
+  placeholder="Enter table name"
+  style={{marginTop:'-60px',position:'fixed',marginLeft:'430px',font:'20px',border: '1px solid black',textAlign:'center'}}
+/>
+    <div style={{width: '1000px',height: '350px',overflow: 'auto',border: '1px solid black',padding: '2px',}}>
+      <table border="1" style={{borderCollapse: 'collapse',width: '100%'}}>
+        <tbody>
+          {tablesData.map((rowData, rowIndex) => (
+            <tr key={rowIndex}>
+              {rowData.map((cellData, colIndex) => (
+                <td key={colIndex} style={{textAlign: 'center'}}>
+                  <input
+                    type="text"
+                    value={cellData}
+                    onChange={(e) =>
+                      handleInputChange(rowIndex, colIndex, e.target.value)
+                    }
+                    style={{width: '90%',padding: '7px',fontSize: '13px',border:'none'}}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <button onClick={saveTables} style={{ position:'relative', cursor: 'pointer',fontSize:'15px', left:'950px',bottom:'-3px' }}>Save</button>
+    <button
+            onClick={handleCloseTable}
+             style={{ position:'relative', cursor: 'pointer',fontSize:'15px', left:'970px',bottom:'-3px' }}
+          >
+            Close
+          </button>
+  </div>
+  
+)}
+
+
+      {isViewing && (
+  <>
+    <div className="table-container">
+    
+      <TableDisplay data={tableData} onCellChange={handleCellChange} isEditing={isEditing}  handleAddRow={handleAddRow}
+        handleAddColumn={handleAddColumn} />
+      <Modal isOpen={isModalOpen} onClose={closeModal}>
+        
+        <table>
+          <thead>
+            <tr>
+              {tableData[0].map((col, idx) => (
+                <th key={idx}>{col}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tableData.slice(1).map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                {row.map((col, colIndex) => (
+                  <td key={colIndex}>{col}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Modal>
+    </div>
+    <div className="actions-panel">
+      <div className="edit-save-buttons">
+        {isEditing ? (
+          <button className="button" onClick={saveTable}>
+          </button>
+        ) : (
+          <button className="button" onClick={enterEditMode}>
+          </button>
+        )}
+        
+      </div>
+    </div>
+  </>
+)}
+<button
+        style={{
+          position: 'fixed',
+          marginTop: '-50px',
+          marginLeft: isPanelOpen ? '305px' : '-15px',
+          visibility: 'visible !important',
+          zIndex: 2000,
+          width: '50px',
+          height: '50px',
+        }}
+        
+        onClick={togglePanel}
+      >
+        {isPanelOpen ? (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M5 7H19" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
+<path d="M5 12H19" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
+<path d="M5 17H19" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
+</svg>
+
+) : (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M5 7H19" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
+  <path d="M5 12H19" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
+  <path d="M5 17H19" stroke="#33363F" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+  
+  
+  )}
+      </button>
+      <button onClick={() => setViewingTable(null)}></button>
+
+      {/* Sliding panel */}
+      <div
+        style={{
+          position: 'fixed',
+          marginTop: '-55px',
+          marginLeft: isPanelOpen ? '-12px' : '-320px',
+          width: '312px',
+          height: '100%',
+          backgroundColor: '#f9f9f9',
+          transition: 'left 0.3s ease',
+          boxShadow: isPanelOpen ? '2px 0px 2px rgba(0,0,0,0.2)' : 'none',
+          zIndex: '999',
+          padding: '10px',
+        }}
+      >
+        {/* Search bar */}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={handleSearchChange}
+          placeholder="Search tables..."
+          style={{
+            width: '100%',
+            padding: '5px',
+            marginBottom: '10px',
+            borderRadius: '5px',
+            border: '1px solid #ddd',
+          }}
+        />
+        {viewingTable && isViewing && currentTableId === viewingTable._id && (
+                    <div style={{ marginBottom: '20px', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', backgroundColor: '#f9f9f9' }}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                    <button className="button" onClick={() => deleteTable(viewingTable._id)}>
+                    <svg
                       xmlns="http://www.w3.org/2000/svg"
                       width="24"
                       height="24"
@@ -248,126 +618,89 @@ const TableUpload = () => {
                       strokeLinejoin="round"
                       className="h-5 w-5 hover:text-gray-700"
                     >
-                      <path d="M12 20h9"></path>
-                      <path d="M16.5 3.5l4 4L7 21l-4.5 1.5L5 17z"></path>
+                      <path d="M3 6h18"></path>
+                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
                     </svg>
+                  </button>
+
+                  <button className="button" onClick={closeTableView}>
+                  {/* Close table view */}
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <rect width="24" height="24" fill="white" />
+                    <path fillRule="evenodd" clipRule="evenodd" d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12ZM7.64645 16.3536C7.45118 16.1583 7.45118 15.8417 7.64645 15.6464L11.2929 12L7.64645 8.35355C7.45118 8.15829 7.45118 7.84171 7.64645 7.64645C7.84171 7.45118 8.15829 7.45118 8.35355 7.64645L12 11.2929L15.6464 7.64645C15.8417 7.45118 16.1583 7.45118 16.3536 7.64645C16.5488 7.84171 16.5488 8.15829 16.3536 8.35355L12.7071 12L15.6464 15.6464C16.5488 15.8417 16.5488 16.1583 16.3536 16.3536C16.1583 16.5488 15.8417 16.5488 15.6464 16.3536L12 12.7071L8.35355 16.3536C8.15829 16.5488 7.84171 16.5488 7.64645 16.3536Z" fill="#222222" />
+                  </svg>
+                </button>
+                <button onClick={openModal} isViewing>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20 20V21H21V20H20ZM15.7071 14.2929C15.3166 13.9024 14.6834 13.9024 14.2929 14.2929C13.9024 14.6834 13.9024 15.3166 14.2929 15.7071L15.7071 14.2929ZM19 14V20H21V14H19ZM20 19H14V21H20V19ZM20.7071 19.2929L15.7071 14.2929L14.2929 15.7071L19.2929 20.7071L20.7071 19.2929Z" fill="#33363F"/>
+              <path d="M4 20H3V21H4V20ZM9.70711 15.7071C10.0976 15.3166 10.0976 14.6834 9.70711 14.2929C9.31658 13.9024 8.68342 13.9024 8.29289 14.2929L9.70711 15.7071ZM3 14V20H5V14H3ZM4 21H10V19H4V21ZM4.70711 20.7071L9.70711 15.7071L8.29289 14.2929L3.29289 19.2929L4.70711 20.7071Z" fill="#33363F"/>
+              <path d="M20 4H21V3H20V4ZM14.2929 8.29289C13.9024 8.68342 13.9024 9.31658 14.2929 9.70711C14.6834 10.0976 15.3166 10.0976 15.7071 9.70711L14.2929 8.29289ZM21 10V4H19V10H21ZM20 3H14V5H20V3ZM19.2929 3.29289L14.2929 8.29289L15.7071 9.70711L20.7071 4.70711L19.2929 3.29289Z" fill="#33363F"/>
+              <path d="M4 4V3H3V4H4ZM8.29289 9.70711C8.68342 10.0976 9.31658 10.0976 9.70711 9.70711C10.0976 9.31658 10.0976 8.68342 9.70711 8.29289L8.29289 9.70711ZM5 10V4H3V10H5ZM4 5H10V3H4V5ZM3.29289 4.70711L8.29289 9.70711L9.70711 8.29289L4.70711 3.29289L3.29289 4.70711Z" fill="#33363F"/>
+              </svg>
+                    </button>
                     
-
-        </button>
-        <button className="button" onClick={saveTable} disabled={!isViewing}>
-          
-          <svg 
-          style={{position:'relative',right:'-435px',top:'-105px'}}
-          width="24" 
-          height="26" 
-          viewBox="0 0 23 19" 
-          fill="none" 
-          xmlns="http://www.w3.org/2000/svg">
-<path d="M14.5 18.5004H5.9C5.05992 18.5004 4.63988 18.5004 4.31901 18.3369C4.03677 18.1931 3.8073 17.9636 3.66349 17.6814C3.5 17.3605 3.5 16.9405 3.5 16.1004V6.9C3.5 6.05992 3.5 5.63988 3.66349 5.31901C3.8073 5.03677 4.03677 4.8073 4.31901 4.66349C4.63988 4.5 5.05992 4.5 5.9 4.5H8.47237C8.84808 4.5 9.03594 4.5 9.20646 4.55179C9.35741 4.59763 9.49785 4.6728 9.61972 4.77298C9.75739 4.88614 9.86159 5.04245 10.07 5.35507L10.93 6.64533C11.1384 6.95795 11.2426 7.11426 11.3803 7.22742C11.5022 7.3276 11.6426 7.40277 11.7935 7.44861C11.9641 7.5004 12.1519 7.5004 12.5276 7.5004H16.1C16.9401 7.5004 17.3601 7.5004 17.681 7.66389C17.9632 7.8077 18.1927 8.03717 18.3365 8.31942C18.5 8.64028 18.5 9.06032 18.5 9.9004V10.5" stroke="#2A4157" stroke-opacity="0.24" stroke-linecap="round"/>
-<path fill-rule="evenodd" clip-rule="evenodd" d="M5.45298 11.6411L5.45298 11.6411L3.70199 16.894C3.46498 17.605 3.34648 17.9605 3.41754 18.2435C3.47974 18.4912 3.63435 18.7057 3.84968 18.8431C4.09567 19 4.4704 19 5.21988 19H16.2702C16.8922 19 17.2032 19 17.4679 18.8959C17.7016 18.804 17.9084 18.6549 18.0695 18.4622C18.252 18.2441 18.3503 17.949 18.547 17.3589L19.947 13.1589C20.3025 12.0924 20.4803 11.5592 20.3737 11.1347C20.2804 10.7631 20.0485 10.4414 19.7255 10.2353C19.3565 10 18.7944 10 17.6702 10H7.72982C7.10779 10 6.79677 10 6.53213 10.1041C6.29844 10.196 6.09156 10.3451 5.93047 10.5377C5.74804 10.7559 5.64969 11.0509 5.45298 11.6411ZM8.5 14C8.22386 14 8 14.2239 8 14.5C8 14.7761 8.22386 15 8.5 15H15.5C15.7761 15 16 14.7761 16 14.5C16 14.2239 15.7761 14 15.5 14H8.5Z" fill="#222222"/>
-</svg>
-        </button>
-      </div>
-</div>
-      {isViewing && (
-  <>
-    <div className="table-container">
-      <TableDisplay data={tableData} onCellChange={handleCellChange} isEditing={isEditing} />
-    </div>
-    <div className="actions-panel">
-      <div className="edit-save-buttons">
-        {isEditing ? (
-          <button className="button" onClick={saveTable}>
-          </button>
-        ) : (
-          <button className="button" onClick={enterEditMode}>
-          </button>
-        )}
-      </div>
-    </div>
-  </>
-)}
-{tables.length > 0 && (
-  <div style={{
-    marginTop: '90px',
-    width: '100%',
-  }}>
-    <h2 style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '10px',
-    }}>
-      Saved Tables
-    </h2>
-    <div style={{
-      maxHeight: '70px',
-      overflow: 'auto',
-      border: '1px solid #ddd',
-      padding: '10px',
-      borderRadius: '5px',
-      backgroundColor: '#f9f9f9',
-    }}>
-
-      {filteredTables.map((table) => (
-        <div key={table._id} style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '8px 0',
-          borderBottom: '1px solid #eee',
-        }}>
-          <span style={{ flex: '1' }}>{table.name}</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="button" onClick={() => viewTable(table)}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="12" cy="12" r="3" stroke="#33363F" strokeWidth="2"/>
-                <path d="M20.188 10.9343C20.5762 11.4056 20.7703 11.6412 20.7703 12C20.7703 12.3588 20.5762 12.5944 20.188 13.0657C18.7679 14.7899 15.6357 18 12 18C8.36427 18 5.23206 14.7899 3.81197 13.0657C3.42381 12.5944 3.22973 12.3588 3.22973 12C3.22973 11.6412 3.42381 11.4056 3.81197 10.9343C5.23206 9.21014 8.36427 6 12 6C15.6357 6 18.7679 9.21014 20.188 10.9343Z" stroke="#33363F" strokeWidth="2"/>
-              </svg>
-            </button>
-            <button className="button" onClick={() => deleteTable(table._id)}>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-5 w-5 hover:text-gray-700"
-              >
-                <path d="M3 6h18"></path>
-                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-              </svg>
-            </button>
-            {isViewing && currentTableId === table._id && (
-              <button className="button" onClick={closeTableView}>
-                <svg 
-                width="24"
-                height="24" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                xmlns="http://www.w3.org/2000/svg">
-                  <rect width="24" height="24" fill="white"/>
-                  <path fillRule="evenodd" clipRule="evenodd" d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12ZM7.64645 16.3536C7.45118 16.1583 7.45118 15.8417 7.64645 15.6464L11.2929 12L7.64645 8.35355C7.45118 8.15829 7.45118 7.84171 7.64645 7.64645C7.84171 7.45118 8.15829 7.45118 8.35355 7.64645L12 11.2929L15.6464 7.64645C15.8417 7.45118 16.1583 7.45118 16.3536 7.64645C16.5488 7.84171 16.5488 8.15829 16.3536 8.35355L12.7071 12L16.3536 15.6464C16.5488 15.8417 16.5488 16.1583 16.3536 16.3536C16.1583 16.5488 15.8417 16.5488 15.6464 16.3536L12 12.7071L8.35355 16.3536C8.15829 16.5488 7.84171 16.5488 7.64645 16.3536Z" fill="#222222"/>
-                </svg>
-              </button>
-            )}
+        <button onClick={() => handleShowPopup(fileName)}>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M3.58579 2.58579C3 3.17157 3 4.11438 3 6V16C3 18.8284 3 20.2426 3.87868 21.1213C4.51998 21.7626 5.44655 21.9359 7 21.9827V19C7 18.4477 7.44772 18 8 18C8.55228 18 9 18.4477 9 19L9 22H15V19C15 18.4477 15.4477 18 16 18C16.5523 18 17 18.4477 17 19L17 21.9827C18.5534 21.9359 19.48 21.7626 20.1213 21.1213C21 20.2426 21 18.8284 21 16V6C21 4.11438 21 3.17157 20.4142 2.58579C19.8284 2 18.8856 2 17 2H7C5.11438 2 4.17157 2 3.58579 2.58579ZM8 8C7.44772 8 7 8.44772 7 9C7 9.55228 7.44772 10 8 10H16C16.5523 10 17 9.55228 17 9C17 8.44772 16.5523 8 16 8H8ZM8 14L16 14C16.5523 14 17 13.5523 17 13C17 12.4477 16.5523 12 16 12L8 12C7.44772 12 7 12.4477 7 13C7 13.5523 7.44772 14 8 14Z" fill="#222222"/>
+        </svg></button>
+        {isPopupVisible && (
+        <div className="popup">
+          <div className="popup-content">
+            <h3>Last Row Data for {popupTableName}</h3>
+            <p>{lastRowDataByTable[popupTableName] || 'No data available'}</p>
+            <button onClick={handleClosePopup}>Close</button>
           </div>
         </div>
-      ))}
-    </div>
-  </div>
-)}
+      )}
 
-  </div>
-  );
-};
+                    </div>
+                    </div>
+                  )}
 
-const TableDisplay = ({ data, onCellChange, isEditing }) => (
+        {/* Saved tables list */}
+        <div style={{
+          maxHeight: '85vh',
+          overflow: 'auto',
+          border: '1px solid #ddd',
+          padding: '5px',
+          borderRadius: '5px',
+          backgroundColor: '#fff',
+        }}>
+          {filteredTableList.length > 0 ? (
+            filteredTableList.map((table) => (
+              <div key={table._id} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 0',
+                borderBottom: '1px solid black',
+              }}>
+                <span style={{ flex: '1' }}>{table.name}</span>
+                <button onClick={() => handleViewTable(table)}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="12" cy="12" r="3" stroke="#33363F" strokeWidth="2" />
+                      <path d="M20.188 10.9343C20.5762 11.4056 20.7703 11.6412 20.7703 12C20.7703 12.3588 20.5762 12.5944 20.188 13.0657C18.7679 14.7899 15.6357 18 12 18C8.36427 18 5.23206 14.7899 3.81197 13.0657C3.42381 12.5944 3.22973 12.3588 3.22973 12C3.22973 11.6412 3.42381 11.4056 3.81197 10.9343C5.23206 9.21014 8.36427 6 12 6C15.6357 6 18.7679 9.21014 20.188 10.9343Z" stroke="#33363F" strokeWidth="2" />
+                    </svg>
+                  </button>
+                </div>
+            ))
+          ) : (
+            <p>No saved tables found.</p>
+          )}
+        </div>
+      </div>
+   </div>
+   );
+ };
+
+const TableDisplay = ({ data, onCellChange, isEditing, handleAddRow, handleAddColumn}) => (
+  <div>
   <table>
     <thead>
       <tr>
@@ -394,6 +727,14 @@ const TableDisplay = ({ data, onCellChange, isEditing }) => (
       ))}
     </tbody>
   </table>
+  {isEditing && (
+        <div>
+          <button onClick={handleAddRow} style={{position:'relative',right:'-10px'}}>Add Row</button>
+          <button onClick={handleAddColumn} style={{position:'relative',right:'-30px'}}>Add Column</button>
+        </div>
+      )}
+  </div>
+     
 );
 
 export default TableUpload;
