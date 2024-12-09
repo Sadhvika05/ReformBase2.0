@@ -34,78 +34,141 @@ mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopol
   });
 
 //saving a table 
-app.post('/api/:groupname/tables', async (req, res) => {
+app.post('/api/:categoryname/:groupname/tables', async (req, res) => {
   const { name, data } = req.body;
-  const { groupname } = req.params;
+  const { categoryname, groupname } = req.params;
+
   try {
-      // Find the group by name
-      const group = await Data.findOne({ name: groupname });
-      if (!group) {
-          return res.status(404).json({ error: 'Group not found' });
-      }
+    // Find the category by name
+    const category = await Data.findOne({ name: categoryname });
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
 
-      // Create new table
-      const newTable = { name, data };
-      
-      // Add table to the group's tables array
-      group.tables.push(newTable);
-      await group.save();
+    // Find the group within the category by name
+    const group = category.groups.find(g => g.name === groupname);
+    if (!group) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
 
-      res.status(201).json(newTable);
+    // Create new table
+    const newTable = { name, data };
+
+    // Add table to the group's tables array
+    group.tables.push(newTable);
+    await category.save();
+
+    res.status(201).json(newTable);
   } catch (error) {
-      res.status(500).json({ error: 'Failed to save table' });
+    res.status(500).json({ error: 'Failed to save table' });
   }
 });
 
-//fetching tables
-app.get('/api/:groupname/tables', async (req, res) => {
-  const { groupname } = req.params;
-  try {
-      // Find the group by name
-      const group = await Data.findOne({ name: groupname });
-      if (!group) {
-          return res.status(404).json({ error: 'Group not found' });
-      }
-
-      // Return the tables associated with the group
-      res.json(group.tables);
-  } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch tables' });
-  }
-});
-
-//update tables
-app.put('/api/:groupname/tables/:tableId', async (req, res) => {
-  const { groupname, tableId } = req.params;
+// Save a table to a specific group in a category
+app.post('/api/:categoryname/:groupname/tables/save-table', async (req, res) => {
+  const { categoryname, groupname } = req.params;
   const { name, data } = req.body;
+
   try {
-      // Find the group by name
-      const group = await Data.findOne({ name: groupname });
-      if (!group) {
-          return res.status(404).json({ error: 'Group not found' });
-      }
+    // Validate if name and data are provided
+    if (!name || !data) {
+      return res.status(400).json({ message: 'Table name and data are required' });
+    }
 
-      // Find the table by its ID and update it
-      const table = group.tables.id(tableId);
-      if (!table) {
-          return res.status(404).json({ error: 'Table not found' });
-      }
+    // Find the category by name
+    const category = await Data.findOne({ name: categoryname });
+    if (!category) {
+      return res.status(404).json({ message: `Category ${categoryname} not found` });
+    }
 
-      table.name = name || table.name;
-      table.data = data || table.data;
-      await group.save();
+    // Find the group within the category
+    const group = category.groups.find(g => g.name === groupname);
+    if (!group) {
+      return res.status(404).json({ message: `Group ${groupname} not found` });
+    }
 
-      res.json(table);
+    // Add the new table to the group
+    const newTable = { name, data };
+    group.tables.push(newTable);
+    await category.save();
+
+    res.status(201).json({ message: 'Table saved successfully to the group!' });
   } catch (error) {
-      res.status(500).json({ error: 'Failed to update table' });
+    res.status(500).json({ message: 'Failed to save table', error: error.message });
   }
 });
 
-//delete table
-app.delete('/api/:groupname/tables/:tableId', async (req, res) => {
-  const { groupname, tableId } = req.params;
+// Fetch all tables for a specific group in a category
+app.get('/api/:categoryname/:groupname/tables', async (req, res) => {
+  const { categoryname, groupname } = req.params;
+
   try {
-    const group = await Data.findOne({ name: groupname });
+    // Find the category by name
+    const category = await Data.findOne({ name: categoryname });
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    // Find the group within the category by name
+    const group = category.groups.find(g => g.name === groupname);
+    if (!group) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+
+    // Return the tables associated with the group
+    res.json(group.tables);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch tables' });
+  }
+});
+
+// Update a specific table in a group within a category
+app.put('/api/:categoryname/:groupname/tables/:tableId', async (req, res) => {
+  const { categoryname, groupname, tableId } = req.params;
+  const { name, data } = req.body;
+
+  try {
+    // Find the category by name
+    const category = await Data.findOne({ name: categoryname });
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    // Find the group within the category by name
+    const group = category.groups.find(g => g.name === groupname);
+    if (!group) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+
+    // Find the table by its ID and update it
+    const table = group.tables.id(tableId);
+    if (!table) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+
+    table.name = name || table.name;
+    table.data = data || table.data;
+    await category.save();
+
+    res.json(table);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update table' });
+  }
+});
+
+// Delete a specific table in a group within a category
+app.delete('/api/:categoryname/:groupname/tables/:tableId', async (req, res) => {
+  const { categoryname, groupname, tableId } = req.params;
+
+  try {
+    // Find the category by name
+    const category = await Data.findOne({ name: categoryname });
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    // Find the group within the category by name
+    const group = category.groups.find(g => g.name === groupname);
     if (!group) {
       return res.status(404).json({ error: 'Group not found' });
     }
@@ -113,8 +176,8 @@ app.delete('/api/:groupname/tables/:tableId', async (req, res) => {
     // Filter out the table with the matching tableId
     group.tables = group.tables.filter(table => table._id.toString() !== tableId);
 
-    // Save the updated group
-    await group.save();
+    // Save the updated category
+    await category.save();
 
     res.status(200).json({ message: 'Table deleted successfully' });
   } catch (error) {
@@ -122,28 +185,35 @@ app.delete('/api/:groupname/tables/:tableId', async (req, res) => {
   }
 });
 
-
-//search table 
-app.get('/api/:groupname/tables/search', async (req, res) => {
-  const { groupname } = req.params;
+// Search tables within a specific group in a category
+app.get('/api/:categoryname/:groupname/tables/search', async (req, res) => {
+  const { categoryname, groupname } = req.params;
   const { name } = req.query; // Query parameter for searching by table name
 
   try {
-      // Find the group by name
-      const group = await Data.findOne({ name: groupname });
-      if (!group) {
-          return res.status(404).json({ error: 'Group not found' });
-      }
+    // Find the category by name
+    const category = await Data.findOne({ name: categoryname });
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
 
-      // Filter tables based on the name query parameter
-      const matchingTables = group.tables.filter(table => table.name.includes(name));
-      
-      // Return the matching tables
-      res.json(matchingTables);
+    // Find the group within the category by name
+    const group = category.groups.find(g => g.name === groupname);
+    if (!group) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+
+    // Filter tables based on the name query parameter
+    const matchingTables = group.tables.filter(table => table.name.includes(name));
+
+    // Return the matching tables
+    res.json(matchingTables);
   } catch (error) {
-      res.status(500).json({ error: 'Failed to search tables' });
+    res.status(500).json({ error: 'Failed to search tables' });
   }
 });
+
+
 
 
   
